@@ -3,7 +3,7 @@ import tempfile
 import os
 import json
 
-from extract_text import extract_tables, flatten_tables
+from extract_text import extract_tables_from_image
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(
@@ -11,8 +11,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📊 Table Extraction Agent")
-st.write("Upload an image containing tables. Output will be generated in **JSON format**.")
+st.title("📊 Table Extraction Agent (EasyOCR)")
+st.write("Upload an image containing a table. Output will be generated in **JSON format**.")
 
 # ---------------- FILE UPLOAD ----------------
 uploaded_file = st.file_uploader(
@@ -30,22 +30,23 @@ if uploaded_file is not None:
     st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
 
     try:
-        # Extract tables (raw)
-        tables = extract_tables(image_path)
+        # ✅ EasyOCR table extraction
+        json_output = extract_tables_from_image(
+            image_path=image_path,
+            image_name=uploaded_file.name,
+            table_id=0
+        )
 
-        # Convert to flattened JSON format
-        json_output = flatten_tables(uploaded_file.name, tables)
-
-        # Show JSON output in UI
+        # Show JSON output
         st.subheader("📄 Extracted JSON")
         st.json(json_output)
 
-        # Save JSON file (overwrite each run)
+        # Save JSON (overwrite every run)
         output_file = "tables.json"
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(json_output, f, indent=2)
 
-        st.success("✅ Extraction completed. JSON saved as tables.json")
+        st.success("✅ Extraction completed. JSON saved.")
 
         # Download button
         with open(output_file, "rb") as f:
@@ -60,6 +61,5 @@ if uploaded_file is not None:
         st.error(f"❌ Error during extraction: {e}")
 
     finally:
-        # Cleanup temp file
         if os.path.exists(image_path):
             os.remove(image_path)
