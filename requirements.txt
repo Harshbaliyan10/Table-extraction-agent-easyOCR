@@ -1,8 +1,13 @@
-streamlit==1.32.0
+@@ -1,5 +1,9 @@
 easyocr
+easyocr==1.7.1
 opencv-python-headless
 numpy
-Pillow
+streamlit
+torch==2.1.0+cpu
+torchvision==0.16.0+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 
 
 
