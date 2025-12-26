@@ -7,7 +7,7 @@ import json
 # pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 
-def extract_tables_from_image(image_path, row_threshold=15):
+def extract_tables(image_path, row_threshold=15):
     """
     Extract tables from an image using Tesseract OCR
     and reconstruct rows/columns using bounding boxes.
@@ -92,5 +92,6 @@ def extract_tables_from_image(image_path, row_threshold=15):
 # ---------- OPTIONAL CLI TEST ----------
 if __name__ == "__main__":
     image_path = "sample.png"
-    result = extract_tables_from_image(image_path)
+    result = extract_tables(image_path)
     print(json.dumps(result, indent=2))
+
