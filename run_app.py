@@ -1,11 +1,13 @@
 import streamlit as st
 from PIL import Image
 from extract_text import extract_tables, flatten_tables
-import json
 
-st.set_page_config(page_title="Table Extraction Agent", layout="wide")
+st.set_page_config(
+    page_title="Table Extraction Agent",
+    layout="wide"
+)
 
-st.title("📊 Table Extraction Agent (Tesseract OCR)")
+st.title("📊 Table Extraction Agent (Tesseract)")
 
 uploaded_file = st.file_uploader(
     "Upload table image",
@@ -13,29 +15,26 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGB")
-
-    st.image(image, caption="Uploaded Image", use_column_width=True)
-
     try:
+        # ✅ Convert uploaded file to PIL Image
+        image = Image.open(uploaded_file)
+
+        st.image(image, caption="Uploaded Image", use_column_width=True)
+
+        # ✅ PASS PIL IMAGE — NOT file, NOT bytes
         table = extract_tables(image)
 
         if not table or len(table) < 2:
-            st.error("No table detected.")
+            st.error("No table detected")
         else:
-            json_output = flatten_tables(table, uploaded_file.name)
-
-            st.success("✅ Extraction successful")
-
-            st.subheader("JSON Output")
-            st.json(json_output)
-
-            st.download_button(
-                label="⬇️ Download JSON",
-                data=json.dumps(json_output, indent=2),
-                file_name="tables.json",
-                mime="application/json"
+            json_rows = flatten_tables(
+                table,
+                image_name=uploaded_file.name
             )
 
+            st.success("Extraction successful")
+
+            st.json(json_rows)
+
     except Exception as e:
-        st.error(f"❌ Error during extraction: {e}")
+        st.error(f"Error during extraction: {e}")
