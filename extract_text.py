@@ -1,73 +1,58 @@
 import pytesseract
-from PIL import Image
 import numpy as np
+from PIL import Image
+import re
 
 
-def extract_tables(image_path):
+def extract_tables(image: Image.Image):
     """
-    Extract a table from image and return structured rows
+    Extract raw table text using Tesseract
+    Input: PIL Image
+    Output: List of rows (list of strings)
     """
-    img = Image.open(image_path).convert("RGB")
-    img_np = np.array(img)
 
-    data = pytesseract.image_to_data(
+    # ✅ Convert PIL Image → NumPy array
+    img_np = np.array(image)
+
+    # OCR config tuned for tables
+    custom_config = r'--oem 3 --psm 6'
+
+    text = pytesseract.image_to_string(
         img_np,
-        output_type=pytesseract.Output.DICT,
-        config="--psm 6"
+        config=custom_config
     )
 
-    words = []
-    for i in range(len(data["text"])):
-        txt = data["text"][i].strip()
-        if txt:
-            words.append({
-                "text": txt,
-                "x": data["left"][i],
-                "y": data["top"][i]
-            })
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
 
-    # ---------- GROUP WORDS INTO ROWS ----------
-    rows = []
-    row_threshold = 15
-
-    for w in sorted(words, key=lambda x: x["y"]):
-        placed = False
-        for row in rows:
-            if abs(row[0]["y"] - w["y"]) < row_threshold:
-                row.append(w)
-                placed = True
-                break
-        if not placed:
-            rows.append([w])
-
-    # ---------- SORT ROWS LEFT → RIGHT ----------
     table = []
-    for row in rows:
-        row_sorted = sorted(row, key=lambda x: x["x"])
-        table.append([cell["text"] for cell in row_sorted])
+    for line in lines:
+        # split on multiple spaces
+        row = re.split(r"\s{2,}", line)
+        table.append(row)
 
     return table
 
 
 def flatten_tables(table, image_name="image.png"):
     """
-    Convert table rows into row-wise JSON
+    Convert table rows → row-wise JSON
     """
+
     headers = table[0]
     rows = table[1:]
 
-    flattened = []
+    output = []
 
-    for idx, row in enumerate(rows):
-        record = {
+    for row_id, row in enumerate(rows):
+        row_dict = {
             "image": image_name,
             "table_id": 0,
-            "row_id": idx
+            "row_id": row_id
         }
 
-        for h, v in zip(headers, row):
-            record[h] = v
+        for i, header in enumerate(headers):
+            row_dict[header] = row[i] if i < len(row) else ""
 
-        flattened.append(record)
+        output.append(row_dict)
 
-    return flattened
+    return output
