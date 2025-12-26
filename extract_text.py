@@ -1,89 +1,63 @@
-import easyocr
+import pytesseract
 import cv2
 import numpy as np
-from collections import defaultdict
+from PIL import Image
 
-def extract_tables_from_image(
-    image_path,
-    image_name="image.png",
-    table_id=0,
-    y_threshold=15
-):
-    """
-    Extract table rows from image using EasyOCR and return row-wise JSON
-    """
-
-    reader = easyocr.Reader(['en'], gpu=False)
-
-    img = cv2.imread(image_path)
-    if img is None:
-        raise ValueError("Could not read image")
-
-    results = reader.readtext(img)
-
-    # Each item: (bbox, text, confidence)
-    rows = defaultdict(list)
-
-    for bbox, text, conf in results:
-        # bbox = [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
-        y_center = int(sum(point[1] for point in bbox) / 4)
-        x_center = int(sum(point[0] for point in bbox) / 4)
-
-        rows[y_center].append((x_center, text))
-
-    # Sort rows top-to-bottom
-    sorted_rows = sorted(rows.items(), key=lambda x: x[0])
-
-    # Merge nearby rows
-    merged_rows = []
-    for y, cells in sorted_rows:
-        if not merged_rows:
-            merged_rows.append((y, cells))
-        else:
-            prev_y, prev_cells = merged_rows[-1]
-            if abs(prev_y - y) <= y_threshold:
-                prev_cells.extend(cells)
-            else:
-                merged_rows.append((y, cells))
-
-    # Sort cells left-to-right
-    table_rows = []
-    for _, cells in merged_rows:
-        cells_sorted = sorted(cells, key=lambda x: x[0])
-        row_text = [cell[1] for cell in cells_sorted]
-        table_rows.append(row_text)
-
-    # First row assumed header
-    headers = table_rows[0]
-    data_rows = table_rows[1:]
-
-    output = []
-
-    for idx, row in enumerate(data_rows):
-        row_dict = {
-            "image": image_name,
-            "table_id": table_id,
-            "row_id": idx
-        }
-
-        for col_idx, header in enumerate(headers):
-            value = row[col_idx] if col_idx < len(row) else ""
-            row_dict[header.strip()] = value.strip()
-
-        output.append(row_dict)
-
-    return output
+# -------- IMAGE PREPROCESSING --------
+def preprocess_image(image: Image.Image):
+    img = np.array(image)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
+    return thresh
 
 
-# -------- TEST LOCALLY --------
-if __name__ == "__main__":
-    import json
+# -------- CORE EXTRACTION --------
+def extract_tables(image: Image.Image):
+    processed = preprocess_image(image)
 
-    image_path = "sample.png"  # change this
-    result = extract_tables_from_image(
-        image_path=image_path,
-        image_name="sample.png"
+    data = pytesseract.image_to_data(
+        processed,
+        output_type=pytesseract.Output.DICT,
+        config="--psm 6"
     )
 
-    print(json.dumps(result, indent=2))
+    rows = {}
+    for i in range(len(data["text"])):
+        text = data["text"][i].strip()
+        if not text:
+            continue
 
+        y = data["top"][i]
+        row_key = y // 15  # group by Y proximity
+
+        rows.setdefault(row_key, []).append(
+            (data["left"][i], text)
+        )
+
+    # Sort rows by Y and words by X
+    table = []
+    for _, words in sorted(rows.items()):
+        row = [w[1] for w in sorted(words)]
+        table.append(row)
+
+    return table
+
+
+# -------- FLATTEN TO JSON --------
+def flatten_tables(table, image_name):
+    headers = table[0]
+    results = []
+
+    for row_id, row in enumerate(table[1:]):
+        item = {
+            "image": image_name,
+            "table_id": 0,
+            "row_id": row_id
+        }
+
+        for i, header in enumerate(headers):
+            item[header] = row[i] if i < len(row) else ""
+
+        results.append(item)
+
+    return results
