@@ -1,63 +1,96 @@
 import pytesseract
-import cv2
-import numpy as np
 from PIL import Image
+import numpy as np
+import json
 
-# -------- IMAGE PREPROCESSING --------
-def preprocess_image(image: Image.Image):
-    img = np.array(image)
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
-    return thresh
+# If needed (Linux containers)
+# pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 
-# -------- CORE EXTRACTION --------
-def extract_tables(image: Image.Image):
-    processed = preprocess_image(image)
+def extract_tables_from_image(image_path, row_threshold=15):
+    """
+    Extract tables from an image using Tesseract OCR
+    and reconstruct rows/columns using bounding boxes.
+    """
+
+    img = Image.open(image_path).convert("RGB")
+    img_np = np.array(img)
 
     data = pytesseract.image_to_data(
-        processed,
+        img_np,
         output_type=pytesseract.Output.DICT,
         config="--psm 6"
     )
 
-    rows = {}
-    for i in range(len(data["text"])):
+    words = []
+    n = len(data["text"])
+
+    for i in range(n):
         text = data["text"][i].strip()
-        if not text:
+        if text == "":
             continue
 
-        y = data["top"][i]
-        row_key = y // 15  # group by Y proximity
+        words.append({
+            "text": text,
+            "x": data["left"][i],
+            "y": data["top"][i],
+            "w": data["width"][i],
+            "h": data["height"][i]
+        })
 
-        rows.setdefault(row_key, []).append(
-            (data["left"][i], text)
-        )
+    # ---------- GROUP WORDS BY ROW (Y-AXIS CLUSTERING) ----------
+    rows = []
+    for word in sorted(words, key=lambda x: x["y"]):
+        placed = False
+        for row in rows:
+            if abs(row[0]["y"] - word["y"]) < row_threshold:
+                row.append(word)
+                placed = True
+                break
+        if not placed:
+            rows.append([word])
 
-    # Sort rows by Y and words by X
+    # ---------- SORT EACH ROW LEFT → RIGHT ----------
+    for row in rows:
+        row.sort(key=lambda x: x["x"])
+
+    # ---------- BUILD TABLE ----------
     table = []
-    for _, words in sorted(rows.items()):
-        row = [w[1] for w in sorted(words)]
-        table.append(row)
+    for row in rows:
+        table.append([cell["text"] for cell in row])
 
-    return table
+    if len(table) < 2:
+        raise ValueError("No table detected")
 
-
-# -------- FLATTEN TO JSON --------
-def flatten_tables(table, image_name):
     headers = table[0]
-    results = []
+    data_rows = table[1:]
 
-    for row_id, row in enumerate(table[1:]):
-        item = {
-            "image": image_name,
-            "table_id": 0,
-            "row_id": row_id
+    # ---------- NORMALIZE COLUMN COUNT ----------
+    col_count = len(headers)
+    clean_rows = []
+
+    for row in data_rows:
+        if len(row) < col_count:
+            row += [""] * (col_count - len(row))
+        elif len(row) > col_count:
+            row = row[:col_count]
+        clean_rows.append(row)
+
+    # ---------- CREATE JSON ----------
+    output = []
+    for idx, row in enumerate(clean_rows):
+        record = {
+            "row_id": idx
         }
+        for h, v in zip(headers, row):
+            record[h] = v
+        output.append(record)
 
-        for i, header in enumerate(headers):
-            item[header] = row[i] if i < len(row) else ""
+    return output
 
-        results.append(item)
 
-    return results
+# ---------- OPTIONAL CLI TEST ----------
+if __name__ == "__main__":
+    image_path = "sample.png"
+    result = extract_tables_from_image(image_path)
+    print(json.dumps(result, indent=2))
