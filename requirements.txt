@@ -1,8 +1,9 @@
 streamlit==1.32.0
-easyocr
+pytesseract
 opencv-python-headless
 numpy
 Pillow
+
 
 
 
